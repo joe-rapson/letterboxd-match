@@ -1,7 +1,6 @@
 import puppeteer from 'puppeteer-extra'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 
-//npx tsx index.ts
 const getLastPage = async (page) => {
     /**
      * Gets the index of the last page when split across multiple pages
@@ -9,51 +8,50 @@ const getLastPage = async (page) => {
      * @param page - page object 
      * @returns integer value for last page in list
      */
-    const lastPageHref = await page.$eval('.paginate-pages ul li:last-of-type a', el => el.getAttribute('href'));
-    const match = lastPageHref ?.match(/page\/(\d+)/);
-    return match ? parseInt(match[1], 10) : null;
-}
+    const lastPageLink = await page.$('.paginate-pages ul li:last-of-type a');
+    if (!lastPageLink) {
+        return 1; 
+    }
+
+    const href = await lastPageLink.evaluate(el => el.getAttribute('href'));
+    const match = href?.match(/page\/(\d+)/);
+    return match ? parseInt(match[1], 10) : 0;
+};
 
 const fetchPaths = async (page) => {
     /**
-     * Watchlist is spread across multiple pages in a posterlist, so each page must be fetched seperately
+     * Watchlist is spread across multiple pages in a posterlist, so each page must be fetched separately
      * 
      * @param page - page content to fetch films from
      * @returns paths of films
      */
-    const filmPaths: string[] = []
-    await page.waitForSelector('div.react-component.poster.film-poster.linked-film-poster');
-    const posters = await page.$$('div.react-component.poster.film-poster.linked-film-poster');
-    for (const poster of posters) {
-        //uses elementhandle object to fetch href 
-        const href = await poster.$eval('a.frame', el => el.getAttribute('href')); 
-        if (href) {
-            filmPaths.push(href)
-        }
-    }
-    return filmPaths
-} 
+    await page.waitForSelector('.poster-list', { timeout: 15000 });
+
+    const filmPaths = await page.$$eval('.poster-list li a.frame', anchors => anchors.map(a => a.getAttribute('href')).filter(href => href));
+
+    return filmPaths;
+};
+
+
 
 const getWatchlist = async (user) => {
     /**
      * Gets the path to every film in a user's watchlist
      * 
      * @param url - Username
-     * @returns array of all 
+     * @returns array of all film paths in watchlist
      */
     let filmPaths: string[] = [] 
-    //load puppeteer using extra-stealth, appearing invisibly 
     const browser = await puppeteer
         .use(StealthPlugin())
-        .launch({ headless: true });
+        .launch({ headless: false, slowMo: 50 }); // debug mode
     const page = await browser.newPage()
 
     await page.goto(`https://letterboxd.com/${user}/watchlist/`)
     await page.content()
-   // await page.screenshot({path:'stealth.png'})
 
     const maxPage = await getLastPage(page)
-    if (maxPage) {
+    if (maxPage) { 
         for (let i = 1; i <= maxPage; i++ ) {
             await page.goto(`https://letterboxd.com/${user}/watchlist/page/${i}/`)
             await page.content()
@@ -61,10 +59,9 @@ const getWatchlist = async (user) => {
             if (pagePaths) {
                 filmPaths.push(...pagePaths);
             }
-            
         }
-    }
-
+    } 
+    
     await browser.close();
     return filmPaths
 }
@@ -95,11 +92,8 @@ const compare = async (users:string[]) => {
 }
 
 const main = async () => {
-    const common = await compare(['embraune', 'joeraps'])
+    const common = await compare(['joeraps', 'gennykellogg'])
     console.log(common)
 }
 
 main()
-
-
-//STRANGE THING OCCURRING ON GENNY'S PROFILE - IT'S NOT FETCHING ONLY ON HERS BECAUSE IT CANT FIND THE COMPONENT
